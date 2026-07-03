@@ -13,10 +13,10 @@ body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSys
 .topbar h1{font-size:20px;font-weight:700}
 .topbar .sub{color:var(--muted);font-size:13px}
 .topbar .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-bottom:20px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-bottom:20px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
 .card .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
-.card .big{font-size:24px;font-weight:700}
+.card .big{font-size:22px;font-weight:700}
 .card .hint{font-size:12px;color:var(--muted);margin-top:4px}
 .card.ok .big{color:var(--green)}.card.warn .big{color:var(--amber)}.card.bad .big{color:var(--red)}
 .cash-input{font-size:22px;font-weight:700;border:none;border-bottom:2px dashed var(--line);width:100%;background:transparent;color:var(--ink);padding:2px 0}
@@ -42,7 +42,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
 .btn.small{padding:4px 9px;font-size:11px}
 .btn.danger{color:var(--red)}
-.row-paid td{opacity:.45;text-decoration:line-through}
+.done td{opacity:.5}
 .alert{border-radius:10px;padding:12px 14px;font-size:13px;margin-bottom:14px;font-weight:600}
 .alert.bad{background:var(--red-bg);color:var(--red)}
 .alert.ok{background:var(--green-bg);color:var(--green)}
@@ -81,7 +81,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 </head>
 <body>
 
-<!-- ============ LOGIN SCREEN ============ -->
+<!-- ============ LOGIN ============ -->
 <div id="login">
   <div class="box">
     <h1>TS Finance</h1>
@@ -101,7 +101,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <div class="topbar">
     <div>
       <h1>TS Finance — Cash Flow Control</h1>
-      <div class="sub">Teman Startup · dashboard mingguan untuk Indi</div>
+      <div class="sub">Teman Startup · dashboard mingguan · data CF Control Juni week 4</div>
     </div>
     <div class="actions">
       <span class="save-status" id="save-status"></span>
@@ -115,9 +115,9 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <div class="tabs" id="tabs"></div>
   <div id="content"></div>
   <div class="footer-note">
-    Data tersimpan bersama di database (Supabase). Perubahan otomatis tersimpan — muncul <b>Tersimpan ✓</b>.
-    Kas di tangan bertambah otomatis dari tab <b>Kas Masuk</b>. Klik <b>↻ Muat ulang</b> untuk menarik perubahan terbaru dari rekan.
-    Angka awal dari CF Control Juni 2026. Rutinitas Senin: update kas → bayar yang BAYAR DULU → laporkan angka "Butuh berapa lagi" ke Lei &amp; Kevin.
+    Kas di tangan <b>naik otomatis</b> saat item Kas Masuk ditandai "Masuk", dan <b>turun</b> saat item Kas Keluar ditandai "Lunas".
+    Semua tersimpan bersama di database — muncul <b>Tersimpan ✓</b>. Klik <b>↻ Muat ulang</b> untuk tarik perubahan rekan.
+    Angka awal dari CF Control Juni week 4 2026.
   </div>
 </div>
 </div>
@@ -135,51 +135,94 @@ const SUPABASE_ANON_KEY = "sb_publishable_LBEPPo5nlX2LHKa_iLmOuA_-L400NEI";
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const CATEGORIES = {
-  gaji:{label:"Gaji / Payroll",prio:1}, pajak:{label:"Pajak (PPH21)",prio:2},
-  bpjs:{label:"BPJS",prio:3}, vendor:{label:"Vendor Event",prio:4},
-  sewa:{label:"Sewa / Ruko",prio:5}, utilitas:{label:"Utilitas / IPL",prio:6},
-  reimburse:{label:"Reimburse",prio:7}, profesional:{label:"BAS / Profesional",prio:8},
-  loan:{label:"Cicilan / Loan",prio:9}, cc:{label:"CC Founders",prio:10}, lainnya:{label:"Lainnya",prio:11}
-};
-
-// Seed hanya dipakai untuk tombol "Reset ke seed".
+// Seed dipakai untuk tombol "Reset ke seed" (data dari CF Control Juni week 4).
 const SEED = {
   cashOnHand: 95175797, fixedMonthlyCost: 242000000, thrTarget: 160000000, thrSaved: 0,
-  inflows: [],
-  bills: [
-    {id:"b1",name:"Payroll Juli",amount:171500068,category:"gaji",due:"2026-07-25",status:"pending"},
-    {id:"b2",name:"Payroll Juni (holdover founders)",amount:24750000,category:"gaji",due:"2026-07-10",status:"pending"},
-    {id:"b3",name:"PPH21 Karyawan Apr–Jun",amount:16000000,category:"pajak",due:"2026-07-10",status:"pending"},
-    {id:"b4",name:"BPJS Maret (tunggakan)",amount:4449120,category:"bpjs",due:"2026-07-15",status:"pending"},
-    {id:"b5",name:"BPJS April (tunggakan)",amount:4449120,category:"bpjs",due:"2026-07-15",status:"pending"},
-    {id:"b6",name:"BAS Maret (tunggakan)",amount:3500000,category:"profesional",due:"2026-07-15",status:"pending"},
-    {id:"b7",name:"BAS April (tunggakan)",amount:3500000,category:"profesional",due:"2026-07-20",status:"pending"},
-    {id:"b8",name:"IPL",amount:2909500,category:"utilitas",due:"2026-07-05",status:"pending"},
-    {id:"b9",name:"Listrik",amount:2007600,category:"utilitas",due:"2026-07-05",status:"pending"},
-    {id:"b10",name:"Wifi",amount:2886000,category:"utilitas",due:"2026-07-15",status:"pending"},
-    {id:"b11",name:"Reimburse Juni",amount:18694380,category:"reimburse",due:"2026-07-08",status:"pending"},
-    {id:"b12",name:"Reimburse mingguan Juli",amount:18834852,category:"reimburse",due:"2026-07-31",status:"pending"},
-    {id:"b13",name:"Loan LKT Term II",amount:5000000,category:"loan",due:"2026-07-20",status:"pending"},
-    {id:"b14",name:"CC Kevin",amount:5000000,category:"cc",due:"2026-07-10",status:"pending"},
-    {id:"b15",name:"CC Leivino (bulanan)",amount:25000000,category:"cc",due:"2026-07-15",status:"pending"},
-    {id:"b16",name:"CC Lei April (hutang)",amount:89000000,category:"cc",due:"2026-07-25",status:"pending"},
-    {id:"b17",name:"The Commons 4 (hutang)",amount:43500000,category:"lainnya",due:"2026-07-25",status:"pending"},
-    {id:"b18",name:"Maisie Juli (Ads)",amount:3500000,category:"lainnya",due:"2026-07-20",status:"pending"},
-    {id:"b19",name:"Brandpal SJS V",amount:7000000,category:"profesional",due:"2026-07-12",status:"pending"},
-    {id:"b20",name:"Akta",amount:3000000,category:"profesional",due:"2026-07-20",status:"pending"},
-    {id:"b21",name:"Budget Iqos Blackbox 12 Jul",amount:20000000,category:"vendor",due:"2026-07-10",status:"pending"},
-    {id:"b22",name:"Budget Iqos Xaidi III 14 Jul",amount:20000000,category:"vendor",due:"2026-07-12",status:"pending"},
-    {id:"b23",name:"Budget Iqos Sourgalz 18 Jul",amount:20000000,category:"vendor",due:"2026-07-16",status:"pending"},
-    {id:"b24",name:"Budget Iqos SBK 22 Jul",amount:15000000,category:"vendor",due:"2026-07-20",status:"pending"},
-    {id:"b25",name:"Budget Iqos Xaidi IV 28 Jul",amount:15000000,category:"vendor",due:"2026-07-26",status:"pending"},
-    {id:"b26",name:"Budget Iqos Dizkorea 31 Jul",amount:20000000,category:"vendor",due:"2026-07-29",status:"pending"},
-    {id:"b27",name:"Budget Iqos It's A Sign 30 Jul",amount:15000000,category:"vendor",due:"2026-07-28",status:"pending"},
-    {id:"b28",name:"Sisa biaya AI Day",amount:12000000,category:"vendor",due:"2026-07-08",status:"pending"},
-    {id:"b29",name:"Polytherm",amount:6000000,category:"vendor",due:"2026-07-15",status:"pending"},
-    {id:"b30",name:"Iqos Show of Batak",amount:10000000,category:"vendor",due:"2026-07-15",status:"pending"},
-    {id:"b31",name:"Talent 99",amount:3133333,category:"vendor",due:"2026-07-15",status:"pending"},
-    {id:"b32",name:"Freelance Badel",amount:1500000,category:"vendor",due:"2026-07-15",status:"pending"}
+  cashin: [
+    {id:"in1",name:"SJS VI",tag:"TSB",amount:10500000,due:"2026-07-12",status:"pending"},
+    {id:"in2",name:"IQOS Xaidi II",tag:"TSB",amount:38250000,due:"2026-07-05",status:"pending"},
+    {id:"in3",name:"IQOS AI Day",tag:"TSB",amount:156560000,due:"2026-07-05",status:"pending"},
+    {id:"in4",name:"IQOS Batak",tag:"TSB",amount:33400000,due:"2026-07-19",status:"pending"},
+    {id:"in5",name:"Tony Romas",tag:"TSB",amount:15000000,due:"2026-07-12",status:"pending"},
+    {id:"in6",name:"Dragonfly II",tag:"TSB",amount:25200000,due:"2026-07-19",status:"pending"},
+    {id:"in7",name:"Falcon V",tag:"TSB",amount:25000000,due:"2026-07-19",status:"pending"},
+    {id:"in8",name:"PIL",tag:"TSB",amount:22916667,due:"2026-07-26",status:"pending"},
+    {id:"in9",name:"Morningsol",tag:"Ads",amount:3600000,due:"2026-07-12",status:"pending"},
+    {id:"in10",name:"Iqos Dizkorea",tag:"TSB",amount:28800000,due:"2026-07-26",status:"pending"},
+    {id:"in11",name:"Iqos Blackbox",tag:"",amount:34930000,due:"2026-07-26",status:"pending"},
+    {id:"in12",name:"Mekari II",tag:"TSB",amount:45000000,due:"2026-07-26",status:"pending"},
+    {id:"in13",name:"NinetyNine IIII",tag:"TSB",amount:23500000,due:"2026-07-12",status:"pending"},
+    {id:"in14",name:"Iqos (Bumi)",tag:"TSCLUB",amount:20000000,due:"2026-07-12",status:"pending"},
+    {id:"in15",name:"[DUIT LEWAT] OPAL",tag:"TSB",amount:4936386,due:"2026-07-31",status:"pending"},
+    {id:"in16",name:"Iqos Xaidi III",tag:"",amount:25600000,due:"2026-07-31",status:"pending"},
+    {id:"in17",name:"Iqos Sourgalz",tag:"",amount:40500000,due:"2026-07-31",status:"pending"},
+    {id:"in18",name:"Iqos Serikat Butuh Karoeke",tag:"",amount:27500000,due:"2026-07-31",status:"pending"},
+    {id:"in19",name:"Iqos Xaidi IV",tag:"",amount:25600000,due:"2026-07-31",status:"pending"},
+    {id:"in20",name:"Iqos It's a Sign",tag:"",amount:48750000,due:"2026-07-31",status:"pending"},
+    {id:"in21",name:"[DUIT LEWAT TF] WSK",tag:"",amount:30000000,due:"2026-07-12",status:"pending"},
+    {id:"in22",name:"[DUIT LEWAT TF] BCA",tag:"",amount:125000000,due:"2026-07-31",status:"pending"}
+  ],
+  cashout: [
+    {id:"out1",name:"Reimburse week 1",tag:"",amount:4030000,due:"2026-07-05",status:"pending"},
+    {id:"out2",name:"IPL",tag:"Rumah Tangga",amount:5819000,due:"2026-07-05",status:"pending"},
+    {id:"out3",name:"Listrik",tag:"Rumah Tangga",amount:2007600,due:"2026-07-19",status:"pending"},
+    {id:"out4",name:"Budget iqos Blackbox 12 Juli",tag:"TSB",amount:30000000,due:"2026-07-12",status:"pending"},
+    {id:"out5",name:"Budget Iqos Dizkorea 31 Juli",tag:"",amount:20000000,due:"2026-07-31",status:"pending"},
+    {id:"out6",name:"Reimburse week 2",tag:"",amount:3733713,due:"2026-07-12",status:"pending"},
+    {id:"out7",name:"CC Kevin",tag:"",amount:5000000,due:"2026-07-12",status:"pending"},
+    {id:"out8",name:"Talent Mekari",tag:"",amount:9000000,due:"2026-07-12",status:"pending"},
+    {id:"out9",name:"PPH 21 Karyawan Jun",tag:"HR Cost",amount:5000000,due:"2026-07-31",status:"pending"},
+    {id:"out10",name:"Budget iqos Xaidi III 14 Juli",tag:"TSB",amount:15000000,due:"2026-07-19",status:"pending"},
+    {id:"out11",name:"Budget iqos Sourgalz 18 Juli",tag:"TSB",amount:29000000,due:"2026-07-19",status:"pending"},
+    {id:"out12",name:"Reimburse week 3",tag:"",amount:7733713,due:"2026-07-19",status:"pending"},
+    {id:"out13",name:"CC Leivino",tag:"",amount:25000000,due:"2026-07-19",status:"pending"},
+    {id:"out14",name:"Wifi Juni",tag:"Rumah Tangga",amount:2886000,due:"2026-07-05",status:"pending"},
+    {id:"out15",name:"Wifi Juli",tag:"Rumah Tangga",amount:1443000,due:"2026-07-05",status:"pending"},
+    {id:"out16",name:"Budget iqos Serikat Butuh Karaoke 22 Juli",tag:"TSB",amount:15000000,due:"2026-07-19",status:"pending"},
+    {id:"out17",name:"Reimburse week 4",tag:"",amount:3733713,due:"2026-07-26",status:"pending"},
+    {id:"out18",name:"Maisie July",tag:"Ads",amount:3500000,due:"2026-07-12",status:"pending"},
+    {id:"out19",name:"Budget iqos Xaidi IV 28 Juli",tag:"TSB",amount:15000000,due:"2026-07-31",status:"pending"},
+    {id:"out20",name:"Budget iqos It's A Sign 30 Juli",tag:"TSB",amount:20000000,due:"2026-07-31",status:"pending"},
+    {id:"out21",name:"Reimburse week 5",tag:"",amount:3633713,due:"2026-07-31",status:"pending"},
+    {id:"out22",name:"Payroll",tag:"HR Cost",amount:171500068,due:"2026-07-31",status:"pending"},
+    {id:"out23",name:"Budget Iqos (Bumi)",tag:"TSCLUB",amount:7000000,due:"2026-07-26",status:"pending"},
+    {id:"out24",name:"Loan LKT Term II",tag:"Loan",amount:10000000,due:"2026-07-31",status:"pending"},
+    {id:"out25",name:"Brandpal [SJS phase V]",tag:"Biaya Professional",amount:7000000,due:"2026-07-26",status:"pending"},
+    {id:"out26",name:"Payroll Juni",tag:"HR Cost",amount:24750000,due:"2026-07-05",status:"pending"},
+    {id:"out27",name:"BPJS Maret",tag:"HR Cost",amount:4449120,due:"2026-07-12",status:"pending"},
+    {id:"out28",name:"Bas Maret",tag:"Biaya Professional",amount:3500000,due:"2026-07-19",status:"pending"},
+    {id:"out29",name:"BPJS April",tag:"HR Cost",amount:4449120,due:"2026-07-12",status:"pending"},
+    {id:"out30",name:"Bas April",tag:"Biaya Professional",amount:3500000,due:"2026-07-19",status:"pending"},
+    {id:"out31",name:"CC Lei",tag:"",amount:64075173,due:"2026-07-05",status:"pending"},
+    {id:"out32",name:"The Commons 4 Hutang",tag:"TSCLUB",amount:43500000,due:"2026-07-05",status:"pending"},
+    {id:"out33",name:"Iqos Ai Day 13",tag:"TSB",amount:12000000,due:"2026-07-05",status:"pending"},
+    {id:"out34",name:"Polytherm",tag:"TSB",amount:6000000,due:"2026-07-05",status:"pending"},
+    {id:"out35",name:"Freelance Badel",tag:"TSB",amount:1500000,due:"2026-07-05",status:"pending"},
+    {id:"out36",name:"Iqos (show of batak)",tag:"TSB",amount:10000000,due:"2026-07-05",status:"pending"},
+    {id:"out37",name:"Talent 99",tag:"TSB",amount:3133333,due:"2026-07-05",status:"pending"},
+    {id:"out38",name:"Reimburse Juni",tag:"",amount:18694380,due:"2026-07-05",status:"pending"},
+    {id:"out39",name:"PPH 21 Karyawan April & Mei & Jun",tag:"HR Cost",amount:11023697,due:"2026-07-12",status:"pending"},
+    {id:"out40",name:"Akta",tag:"Biaya Professional",amount:3000000,due:"2026-07-19",status:"pending"},
+    {id:"out41",name:"[Duit Lewat TF] Nirmana — Deposit",tag:"",amount:10000000,due:"2026-07-05",status:"pending"},
+    {id:"out42",name:"[Duit Lewat TF] Nirmana — DP 50%",tag:"",amount:32500000,due:"2026-07-05",status:"pending"},
+    {id:"out43",name:"[Duit Lewat TF] Nirmana — Pelunasan",tag:"",amount:32500000,due:"2026-07-31",status:"pending"},
+    {id:"out44",name:"[Duit Lewat TF] Lumitron LED/Stage — DP 30%",tag:"",amount:9000000,due:"2026-07-12",status:"pending"},
+    {id:"out45",name:"[Duit Lewat TF] Lumitron — Pelunasan 70%",tag:"",amount:21000000,due:"2026-07-31",status:"pending"},
+    {id:"out46",name:"[Duit Lewat TF] SMG Equipment — DP 50%",tag:"",amount:12510000,due:"2026-07-12",status:"pending"},
+    {id:"out47",name:"[Duit Lewat TF] SMG Equipment — Final 50%",tag:"",amount:12510000,due:"2026-07-31",status:"pending"},
+    {id:"out48",name:"[Duit Lewat TF] Askara Parled Lighting (Kevin)",tag:"",amount:5000000,due:"2026-07-05",status:"pending"},
+    {id:"out49",name:"[Duit Lewat TF] IndoProtector (HT/comms)",tag:"",amount:950000,due:"2026-07-05",status:"pending"},
+    {id:"out50",name:"[Duit Lewat TF] Transport/Logistik/Akomodasi",tag:"",amount:6400000,due:"2026-07-12",status:"pending"},
+    {id:"out51",name:"[Duit Lewat TF] Freelance Crew (8 org)",tag:"",amount:2400000,due:"2026-07-26",status:"pending"},
+    {id:"out52",name:"[Duit Lewat TF] Konsumsi crew & 3rd party",tag:"",amount:5000000,due:"2026-07-12",status:"pending"},
+    {id:"out53",name:"[Duit Lewat TF] Decoration & Ambience",tag:"",amount:2000000,due:"2026-07-12",status:"pending"},
+    {id:"out54",name:"[Duit Lewat TF] DJ 2 hari",tag:"",amount:2200000,due:"2026-07-19",status:"pending"},
+    {id:"out55",name:"[Duit Lewat TF] Speaker Gifts",tag:"",amount:5996000,due:"2026-07-05",status:"pending"},
+    {id:"out56",name:"[Duit Lewat TF] Community Activity Gift",tag:"",amount:1900000,due:"2026-07-12",status:"pending"},
+    {id:"out57",name:"[Duit Lewat TF] Sponsor/Partner additional",tag:"",amount:5000000,due:"2026-07-05",status:"pending"},
+    {id:"out58",name:"[Duit Lewat TF] Documentation equip rental",tag:"",amount:5000000,due:"2026-07-12",status:"pending"},
+    {id:"out59",name:"[Duit Lewat TF] Marketing Cost",tag:"",amount:11900000,due:"2026-07-05",status:"pending"},
+    {id:"out60",name:"[Duit Lewat TF] Refund deposit tenant",tag:"",amount:3000000,due:"2026-07-26",status:"pending"}
   ],
   debts: [
     {id:"d1",name:"CC Lei April",total:89000000,paid:0},
@@ -201,8 +244,8 @@ const SEED = {
 };
 
 let S = null;
-let TAB = "bayar";
-let booted = false;   // true setelah data pertama dimuat -> mulai auto-save
+let TAB = "kasin";
+let booted = false;
 
 // ---------- helpers ----------
 function fmt(n){
@@ -218,16 +261,19 @@ function parseNum(s){ const n = Number(String(s).replace(/[^\d-]/g,"")); return 
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
 function settingsRow(){ return { id:1, cash_on_hand:S.cashOnHand, fixed_monthly_cost:S.fixedMonthlyCost, thr_target:S.thrTarget, thr_saved:S.thrSaved }; }
+function byDue(a,b){ return String(a.due||"").localeCompare(String(b.due||"")) || a.id.localeCompare(b.id,undefined,{numeric:true}); }
+function tagBadge(t){ return t ? `<span class="badge cat">${esc(t)}</span>` : ""; }
 
-// ---------- SUPABASE: load + save ----------
+// ---------- SUPABASE ----------
 async function loadAll(){
-  const [st, bl, db, pr] = await Promise.all([
+  const [st, ci, co, db, pr] = await Promise.all([
     sb.from('settings').select('*').eq('id',1).maybeSingle(),
-    sb.from('bills').select('*'),
+    sb.from('cashin').select('*'),
+    sb.from('cashout').select('*'),
     sb.from('debts').select('*'),
     sb.from('projection').select('*').order('idx')
   ]);
-  const err = st.error || bl.error || db.error || pr.error;
+  const err = st.error || ci.error || co.error || db.error || pr.error;
   if(err){ throw err; }
   const s = st.data || {};
   S = {
@@ -235,20 +281,12 @@ async function loadAll(){
     fixedMonthlyCost: Number(s.fixed_monthly_cost ?? SEED.fixedMonthlyCost),
     thrTarget:        Number(s.thr_target ?? SEED.thrTarget),
     thrSaved:         Number(s.thr_saved ?? SEED.thrSaved),
-    inflows: [],
-    bills: (bl.data||[]).map(r=>({
-      id:r.id, name:r.name, amount:Number(r.amount), category:r.category,
-      due:r.due||"", status:r.status||"pending", paidAt:r.paid_at||undefined, forceHold:!!r.force_hold
-    })),
+    cashin: (ci.data||[]).map(r=>({ id:r.id, name:r.name, tag:r.tag||"", amount:Number(r.amount), due:r.due||"", status:r.status||"pending", receivedAt:r.received_at||undefined })),
+    cashout:(co.data||[]).map(r=>({ id:r.id, name:r.name, tag:r.tag||"", amount:Number(r.amount), due:r.due||"", status:r.status||"pending", paidAt:r.paid_at||undefined })),
     debts: (db.data||[]).map(r=>({ id:r.id, name:r.name, total:Number(r.total), paid:Number(r.paid||0) })),
     projection: (pr.data||[]).map(r=>({ month:r.month, inflow:Number(r.inflow), outflow:Number(r.outflow), note:r.note||"" }))
   };
-  S.bills.sort((a,b)=>a.id.localeCompare(b.id,undefined,{numeric:true}));
-  // Kas masuk (opsional — kalau tabelnya belum dibuat, app tetap jalan)
-  try{
-    const inf = await sb.from('inflows').select('*').order('date');
-    if(!inf.error) S.inflows = (inf.data||[]).map(r=>({ id:r.id, date:r.date||"", source:r.source||"", amount:Number(r.amount) }));
-  }catch(e){ /* tabel inflows mungkin belum ada */ }
+  S.cashin.sort(byDue); S.cashout.sort(byDue);
 }
 
 function setStatus(state){
@@ -260,62 +298,35 @@ function setStatus(state){
 }
 
 let saveTimer=null, saving=false, saveAgain=false;
-function scheduleSave(){
-  setStatus('saving');
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(runSave, 500);
-}
+function scheduleSave(){ setStatus('saving'); clearTimeout(saveTimer); saveTimer = setTimeout(runSave, 500); }
 async function runSave(){
   if(saving){ saveAgain=true; return; }
   saving=true; saveAgain=false;
-  try{
-    await pushAll();
-    setStatus('saved');
-  }catch(e){
-    console.error(e); setStatus('error');
-  }finally{
-    saving=false;
-    if(saveAgain){ saveAgain=false; scheduleSave(); }
-  }
+  try{ await pushAll(); setStatus('saved'); }
+  catch(e){ console.error(e); setStatus('error'); }
+  finally{ saving=false; if(saveAgain){ saveAgain=false; scheduleSave(); } }
 }
 
 async function pushAll(){
   let r = await sb.from('settings').upsert(settingsRow());
   if(r.error) throw r.error;
 
-  // upsert saja (TIDAK menghapus baris rekan). Hapus dilakukan eksplisit saat klik ✕.
-  const billRows = S.bills.map(b=>({
-    id:b.id, name:b.name, amount:b.amount, category:b.category,
-    due:b.due||null, status:b.status||'pending', paid_at:b.paidAt||null, force_hold:!!b.forceHold
-  }));
-  if(billRows.length){ r = await sb.from('bills').upsert(billRows); if(r.error) throw r.error; }
+  const ciRows = S.cashin.map(x=>({ id:x.id, name:x.name, tag:x.tag||"", amount:x.amount, due:x.due||null, status:x.status||'pending', received_at:x.receivedAt||null }));
+  if(ciRows.length){ r = await sb.from('cashin').upsert(ciRows); if(r.error) throw r.error; }
+
+  const coRows = S.cashout.map(x=>({ id:x.id, name:x.name, tag:x.tag||"", amount:x.amount, due:x.due||null, status:x.status||'pending', paid_at:x.paidAt||null }));
+  if(coRows.length){ r = await sb.from('cashout').upsert(coRows); if(r.error) throw r.error; }
 
   const debtRows = S.debts.map(d=>({ id:d.id, name:d.name, total:d.total, paid:d.paid }));
   if(debtRows.length){ r = await sb.from('debts').upsert(debtRows); if(r.error) throw r.error; }
 
   const projRows = S.projection.map((p,i)=>({ idx:i, month:p.month, inflow:p.inflow, outflow:p.outflow, note:p.note||"" }));
   if(projRows.length){ r = await sb.from('projection').upsert(projRows); if(r.error) throw r.error; }
-
-  const infRows = S.inflows.map(x=>({ id:x.id, date:x.date||null, source:x.source, amount:x.amount }));
-  if(infRows.length){ r = await sb.from('inflows').upsert(infRows); if(r.error) throw r.error; }
 }
 
 // ---------- derived ----------
-function sortedPending(){
-  return S.bills.filter(b=>b.status==="pending").sort((a,b)=>{
-    const pa=(CATEGORIES[a.category]||{prio:99}).prio, pb=(CATEGORIES[b.category]||{prio:99}).prio;
-    return pa!==pb ? pa-pb : String(a.due||"").localeCompare(String(b.due||""));
-  });
-}
-function allocation(){
-  let remaining = S.cashOnHand; const map = {};
-  for(const b of sortedPending()){
-    if(b.forceHold){ map[b.id]="hold"; continue; }
-    if(b.amount<=remaining){ map[b.id]="pay"; remaining-=b.amount; }
-    else map[b.id]="hold";
-  }
-  return map;
-}
+function pendingIn(){ return S.cashin.filter(x=>x.status!=='received').reduce((s,x)=>s+x.amount,0); }
+function pendingOut(){ return S.cashout.filter(x=>x.status!=='paid').reduce((s,x)=>s+x.amount,0); }
 function projRows(){
   let bal = S.cashOnHand;
   return S.projection.map(p=>{ const start=bal; bal = bal + p.inflow - p.outflow; return {...p,start,end:bal}; });
@@ -327,8 +338,8 @@ function render(){
   renderCards();
   renderTabs();
   const c = document.getElementById("content");
-  if(TAB==="bayar") c.innerHTML = viewBayar();
-  else if(TAB==="kasmasuk") c.innerHTML = viewKasMasuk();
+  if(TAB==="kasin") c.innerHTML = viewKasIn();
+  else if(TAB==="kasout") c.innerHTML = viewKasOut();
   else if(TAB==="hutang") c.innerHTML = viewHutang();
   else if(TAB==="thr") c.innerHTML = viewThr();
   else if(TAB==="proyeksi") c.innerHTML = viewProyeksi();
@@ -336,122 +347,121 @@ function render(){
 }
 
 function renderCards(){
-  const pending = S.bills.filter(b=>b.status==="pending");
-  const totalPending = pending.reduce((s,b)=>s+b.amount,0);
-  const gap = totalPending - S.cashOnHand;
+  const pin = pendingIn(), pout = pendingOut();
+  const gap = pout - S.cashOnHand;
+  const projEnd = S.cashOnHand + pin - pout;
   const runway = S.fixedMonthlyCost>0 ? (S.cashOnHand/S.fixedMonthlyCost)*4.33 : 0;
-  const debtTotal = S.debts.reduce((s,d)=>s+d.total,0);
-  const debtPaid = S.debts.reduce((s,d)=>s+Math.min(d.paid,d.total),0);
-  const debtLeft = debtTotal-debtPaid;
   document.getElementById("cards").innerHTML = `
     <div class="card">
-      <div class="label">Kas di tangan (update tiap Senin)</div>
+      <div class="label">Kas di tangan</div>
       <input class="cash-input" value="${fmtFull(S.cashOnHand)}" onchange="S.cashOnHand=parseNum(this.value);render()">
-      <div class="hint">Bertambah otomatis dari tab Kas Masuk. Bisa diedit manual.</div>
+      <div class="hint">Naik saat Kas Masuk ditandai, turun saat Kas Keluar dibayar. Bisa diedit manual.</div>
     </div>
     <div class="card ${gap>0?"bad":"ok"}">
-      <div class="label">Butuh berapa lagi bulan ini</div>
+      <div class="label">Butuh berapa lagi (sekarang)</div>
       <div class="big">${gap>0?fmt(gap):"Cukup ✓"}</div>
-      <div class="hint">Total tagihan pending ${fmt(totalPending)} vs kas ${fmt(S.cashOnHand)}</div>
+      <div class="hint">Kas keluar belum dibayar ${fmt(pout)} vs kas ${fmt(S.cashOnHand)}</div>
+    </div>
+    <div class="card ok">
+      <div class="label">Akan cair (kas masuk)</div>
+      <div class="big">${fmt(pin)}</div>
+      <div class="hint">Total kas masuk yang belum ditandai</div>
+    </div>
+    <div class="card ${projEnd<0?"bad":"ok"}">
+      <div class="label">Proyeksi setelah semua cair</div>
+      <div class="big">${fmt(projEnd)}</div>
+      <div class="hint">Kas + semua kas masuk − semua kas keluar</div>
     </div>
     <div class="card ${runway<4?"bad":runway<8?"warn":"ok"}">
       <div class="label">Runway</div>
       <div class="big">${runway.toFixed(1)} minggu</div>
-      <div class="hint">Kas ÷ biaya tetap ${fmt(S.fixedMonthlyCost)}/bulan. Target aman ≥ 4,3 minggu.</div>
-    </div>
-    <div class="card ${debtLeft>0?"warn":"ok"}">
-      <div class="label">Sisa hutang lama</div>
-      <div class="big">${fmt(debtLeft)}</div>
-      <div class="hint">dari total ${fmt(debtTotal)} (sejak Nov 2025)</div>
+      <div class="hint">Kas ÷ biaya tetap ${fmt(S.fixedMonthlyCost)}/bulan</div>
     </div>`;
 }
 
 function renderTabs(){
-  const tabs = [["bayar","Pembayaran"],["kasmasuk","Kas Masuk"],["hutang","Hutang"],["thr","Tabungan THR"],["proyeksi","Proyeksi s/d Des 2026"],["setting","Pengaturan"]];
+  const tabs = [["kasin","Kas Masuk"],["kasout","Kas Keluar"],["hutang","Hutang"],["thr","Tabungan THR"],["proyeksi","Proyeksi s/d Des 2026"],["setting","Pengaturan"]];
   document.getElementById("tabs").innerHTML = tabs.map(([k,l])=>
     `<button class="${TAB===k?"active":""}" onclick="TAB='${k}';render()">${l}</button>`).join("");
 }
 
-function viewBayar(){
-  const sorted = sortedPending();
-  const alloc = allocation();
-  const pending = S.bills.filter(b=>b.status==="pending");
-  const totalPending = pending.reduce((s,b)=>s+b.amount,0);
-  const totalPay = pending.filter(b=>alloc[b.id]==="pay").reduce((s,b)=>s+b.amount,0);
-  const gap = totalPending - S.cashOnHand;
-  const today = todayISO();
-  const paid = S.bills.filter(b=>b.status==="paid");
-
-  const rows = sorted.map((b,i)=>{
-    const late = b.due && b.due < today;
-    return `<tr>
-      <td>${i+1}</td>
-      <td>${esc(b.name)}${late?' <span class="badge late">TELAT</span>':""}</td>
-      <td class="hide-sm"><span class="badge cat">${(CATEGORIES[b.category]||{label:b.category}).label}</span></td>
-      <td>${b.due||"-"}</td>
-      <td class="num">${fmtFull(b.amount)}</td>
-      <td>${alloc[b.id]==="pay"?'<span class="badge pay">BAYAR DULU</span>':'<span class="badge hold">TAHAN</span>'}</td>
+function viewKasIn(){
+  const list = [...S.cashin].sort(byDue);
+  const received = S.cashin.filter(x=>x.status==='received').reduce((s,x)=>s+x.amount,0);
+  const pin = pendingIn();
+  const rows = list.map(x=>{
+    const done = x.status==='received';
+    return `<tr class="${done?"done":""}">
+      <td>${x.due||"-"}</td>
+      <td>${esc(x.name)}</td>
+      <td class="hide-sm">${tagBadge(x.tag)}</td>
+      <td class="num">${fmtFull(x.amount)}</td>
+      <td>${done?'<span class="badge pay">MASUK</span>':'<span class="badge hold">BELUM</span>'}</td>
       <td style="white-space:nowrap">
-        <button class="btn small" onclick="toggleHold('${b.id}')">${b.forceHold?"Lepas":"Tahan"}</button>
-        <button class="btn small primary" onclick="markPaid('${b.id}')">Lunas</button>
-        <button class="btn small danger" onclick="delBill('${b.id}')">✕</button>
+        ${done
+          ? `<button class="btn small" onclick="unmarkIn('${x.id}')">Batalkan</button>`
+          : `<button class="btn small primary" onclick="markIn('${x.id}')">Masuk</button>`}
+        <button class="btn small danger" onclick="delIn('${x.id}')">✕</button>
       </td>
     </tr>`;
   }).join("");
-
-  const paidRows = paid.map(b=>`<tr class="row-paid">
-    <td>${esc(b.name)}</td><td>${b.paidAt||""}</td><td class="num">${fmtFull(b.amount)}</td>
-    <td><button class="btn small" onclick="unpay('${b.id}')">Batalkan</button></td></tr>`).join("");
-
-  const catOptions = Object.entries(CATEGORIES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join("");
-
-  return `
-    ${gap>0
-      ? `<div class="alert bad">Kas tidak cukup untuk semua tagihan. Bayar yang berlabel BAYAR DULU sesuai urutan; sisanya TAHAN sampai ada inflow masuk. Kekurangan: ${fmtFull(gap)}.</div>`
-      : `<div class="alert ok">Kas cukup untuk semua tagihan pending bulan ini.</div>`}
+  return `<div class="alert ok">Belum cair: <b>${fmtFull(pin)}</b> · Sudah masuk: <b>${fmtFull(received)}</b></div>
     <div class="panel">
-      <h2>Urutan pembayaran</h2>
-      <div class="desc">Urutan otomatis: Gaji → Pajak → BPJS → Vendor event → Sewa → Utilitas → Reimburse → BAS → Loan → CC founders.
-      Yang kebagian kas = BAYAR DULU (${fmt(totalPay)}), sisanya TAHAN. "Tahan" = tahan manual, "Lunas" = sudah dibayar.</div>
+      <h2>Kas Masuk (Inflow dari klien)</h2>
+      <div class="desc">Klik <b>Masuk</b> saat uang benar-benar diterima → Kas di tangan otomatis bertambah. <b>Batalkan</b> untuk mengembalikan. ✕ untuk hapus baris.</div>
       <div style="overflow-x:auto"><table>
-        <thead><tr><th>#</th><th>Tagihan</th><th class="hide-sm">Kategori</th><th>Jatuh tempo</th><th class="num">Jumlah</th><th>Status</th><th></th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="7" style="color:var(--muted)">Tidak ada tagihan pending.</td></tr>'}</tbody>
+        <thead><tr><th>Perkiraan cair</th><th>Sumber / Klien</th><th class="hide-sm">Tag</th><th class="num">Jumlah</th><th>Status</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6" style="color:var(--muted)">Belum ada kas masuk.</td></tr>'}</tbody>
       </table></div>
       <div class="form-grid">
-        <div class="field"><label>Nama tagihan</label><input id="f-name" placeholder="cth: Budget event X"></div>
-        <div class="field"><label>Jumlah (Rp)</label><input id="f-amount" placeholder="15000000"></div>
-        <div class="field"><label>Kategori</label><select id="f-cat">${catOptions}</select></div>
-        <div class="field"><label>Jatuh tempo</label><input id="f-due" type="date" value="${todayISO()}"></div>
-        <button class="btn primary" onclick="addBill()">+ Tambah tagihan</button>
+        <div class="field"><label>Perkiraan cair</label><input id="ci-date" type="date" value="${todayISO()}"></div>
+        <div class="field"><label>Sumber / Klien</label><input id="ci-name" placeholder="cth: DP Event Klien X"></div>
+        <div class="field"><label>Tag (opsional)</label><input id="ci-tag" placeholder="TSB / Ads / ..."></div>
+        <div class="field"><label>Jumlah (Rp)</label><input id="ci-amount" placeholder="50000000"></div>
+        <button class="btn primary" onclick="addIn()">+ Tambah kas masuk</button>
       </div>
-    </div>
-    ${paid.length ? `<div class="panel"><h2>Sudah dibayar</h2><table><tbody>${paidRows}</tbody></table></div>` : ""}`;
+    </div>`;
 }
 
-function viewKasMasuk(){
-  const list = [...S.inflows].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
-  const total = S.inflows.reduce((s,x)=>s+x.amount,0);
-  const rows = list.map(x=>`<tr>
-    <td>${x.date||"-"}</td>
-    <td>${esc(x.source||"")}</td>
-    <td class="num pos">${fmtFull(x.amount)}</td>
-    <td><button class="btn small danger" onclick="delInflow('${x.id}')">✕</button></td>
-  </tr>`).join("");
-  return `<div class="alert ok">Kas di tangan sekarang: <b>${fmtFull(S.cashOnHand)}</b></div>
+function viewKasOut(){
+  const list = [...S.cashout].sort(byDue);
+  const paid = S.cashout.filter(x=>x.status==='paid').reduce((s,x)=>s+x.amount,0);
+  const pout = pendingOut();
+  const gap = pout - S.cashOnHand;
+  const today = todayISO();
+  const rows = list.map(x=>{
+    const done = x.status==='paid';
+    const late = !done && x.due && x.due < today;
+    return `<tr class="${done?"done":""}">
+      <td>${x.due||"-"}${late?' <span class="badge late">TELAT</span>':""}</td>
+      <td>${esc(x.name)}</td>
+      <td class="hide-sm">${tagBadge(x.tag)}</td>
+      <td class="num">${fmtFull(x.amount)}</td>
+      <td>${done?'<span class="badge pay">LUNAS</span>':'<span class="badge hold">BELUM</span>'}</td>
+      <td style="white-space:nowrap">
+        ${done
+          ? `<button class="btn small" onclick="unmarkOut('${x.id}')">Batalkan</button>`
+          : `<button class="btn small primary" onclick="markOut('${x.id}')">Lunas</button>`}
+        <button class="btn small danger" onclick="delOut('${x.id}')">✕</button>
+      </td>
+    </tr>`;
+  }).join("");
+  return `${gap>0
+      ? `<div class="alert bad">Kas belum cukup untuk semua yang belum dibayar. Kekurangan: <b>${fmtFull(gap)}</b> (bisa ketutup dari kas masuk yang akan cair).</div>`
+      : `<div class="alert ok">Kas cukup untuk semua kas keluar yang belum dibayar.</div>`}
     <div class="panel">
-      <h2>Kas masuk dari klien</h2>
-      <div class="desc">Tiap kali ada uang masuk dari klien, catat di sini — <b>Kas di tangan otomatis bertambah</b>.
-      Klik ✕ untuk membatalkan satu entri (kas otomatis dikurangi kembali). Jadi tidak perlu edit kas manual tiap minggu.</div>
-      <div class="desc">Total kas masuk tercatat: <b>${fmtFull(total)}</b></div>
+      <h2>Kas Keluar (Outflow)</h2>
+      <div class="desc">Klik <b>Lunas</b> saat sudah dibayar → Kas di tangan otomatis berkurang. <b>Batalkan</b> untuk mengembalikan. ✕ untuk hapus baris. Sudah dibayar: <b>${fmtFull(paid)}</b>.</div>
       <div style="overflow-x:auto"><table>
-        <thead><tr><th>Tanggal</th><th>Dari / Klien</th><th class="num">Jumlah masuk</th><th></th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="4" style="color:var(--muted)">Belum ada kas masuk tercatat.</td></tr>'}</tbody>
+        <thead><tr><th>Jatuh tempo</th><th>Keperluan</th><th class="hide-sm">Tag</th><th class="num">Jumlah</th><th>Status</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6" style="color:var(--muted)">Belum ada kas keluar.</td></tr>'}</tbody>
       </table></div>
       <div class="form-grid">
-        <div class="field"><label>Tanggal</label><input id="in-date" type="date" value="${todayISO()}"></div>
-        <div class="field"><label>Dari / Klien</label><input id="in-source" placeholder="cth: DP Event Klien X"></div>
-        <div class="field"><label>Jumlah masuk (Rp)</label><input id="in-amount" placeholder="50000000"></div>
-        <button class="btn primary" onclick="addInflow()">+ Tambah kas masuk</button>
+        <div class="field"><label>Jatuh tempo</label><input id="co-date" type="date" value="${todayISO()}"></div>
+        <div class="field"><label>Keperluan</label><input id="co-name" placeholder="cth: Budget event X"></div>
+        <div class="field"><label>Tag (opsional)</label><input id="co-tag" placeholder="TSB / HR Cost / ..."></div>
+        <div class="field"><label>Jumlah (Rp)</label><input id="co-amount" placeholder="15000000"></div>
+        <button class="btn primary" onclick="addOut()">+ Tambah kas keluar</button>
       </div>
     </div>`;
 }
@@ -460,7 +470,7 @@ function viewHutang(){
   const debtTotal = S.debts.reduce((s,d)=>s+d.total,0);
   const debtPaid = S.debts.reduce((s,d)=>s+Math.min(d.paid,d.total),0);
   const pct = debtTotal>0 ? Math.min(100,(debtPaid/debtTotal)*100) : 0;
-  const rows = S.debts.map(d=>`<tr class="${d.paid>=d.total?"row-paid":""}">
+  const rows = S.debts.map(d=>`<tr class="${d.paid>=d.total?"done":""}">
     <td>${esc(d.name)}</td>
     <td class="num">${fmtFull(d.total)}</td>
     <td class="num"><input class="table-input" value="${d.paid.toLocaleString("id-ID")}" onchange="updDebt('${d.id}',this.value)"></td>
@@ -469,7 +479,7 @@ function viewHutang(){
   </tr>`).join("");
   return `<div class="panel">
     <h2>Hutang lama (sejak Nov 2025)</h2>
-    <div class="desc">Aturan main: setiap event selesai &amp; dibayar klien, sisihkan 50% profit event untuk cicil hutang di sini. Isi kolom "Sudah dicicil" tiap ada pembayaran.</div>
+    <div class="desc">Aturan main: setiap event selesai &amp; dibayar klien, sisihkan 50% profit event untuk cicil hutang di sini.</div>
     <div class="progress"><div style="width:${pct}%"></div></div>
     <div class="desc">Terbayar ${fmtFull(debtPaid)} dari ${fmtFull(debtTotal)} — sisa <b>${fmtFull(debtTotal-debtPaid)}</b></div>
     <div style="overflow-x:auto"><table>
@@ -491,7 +501,7 @@ function viewThr(){
   const pct = S.thrTarget>0 ? Math.min(100,(S.thrSaved/S.thrTarget)*100) : 0;
   return `<div class="panel">
     <h2>Tabungan THR — Desember 2026</h2>
-    <div class="desc">Payroll Desember di plan = Rp 324jt (payroll normal + THR). Supaya Desember tidak jebol, sisihkan dana THR tiap bulan mulai sekarang ke rekening terpisah.</div>
+    <div class="desc">Payroll Desember di plan = Rp 324jt (payroll normal + THR). Sisihkan dana THR tiap bulan ke rekening terpisah.</div>
     <div class="cards" style="margin-top:12px">
       <div class="card"><div class="label">Target THR</div>
         <input class="cash-input" value="${fmtFull(S.thrTarget)}" onchange="S.thrTarget=parseNum(this.value);render()"></div>
@@ -524,12 +534,12 @@ function viewProyeksi(){
   </tr>`).join("");
   return `
     ${firstNeg
-      ? `<div class="alert bad">Dengan angka sekarang, kas TS jadi MINUS di ${firstNeg.month} (${fmtFull(firstNeg.end)}). Artinya: perlu tambah inflow atau potong outflow sebelum bulan itu.</div>`
+      ? `<div class="alert bad">Dengan angka sekarang, kas TS jadi MINUS di ${firstNeg.month} (${fmtFull(firstNeg.end)}).</div>`
       : `<div class="alert ok">Proyeksi positif sampai Desember 2026.</div>`}
     <div class="panel"><h2>Saldo akhir per bulan</h2><div class="bars">${bars}</div></div>
     <div class="panel">
       <h2>Proyeksi Juli–Desember 2026</h2>
-      <div class="desc">Angka dari plan CF FY26 — edit langsung kalau ada kontrak baru atau biaya berubah. Saldo awal Juli mengikuti "Kas di tangan" di atas.</div>
+      <div class="desc">Saldo awal Juli mengikuti "Kas di tangan" di atas. Edit langsung kalau ada kontrak baru.</div>
       <div style="overflow-x:auto"><table>
         <thead><tr><th>Bulan</th><th class="num">Saldo awal</th><th class="num">Inflow</th><th class="num">Outflow</th><th class="num">Saldo akhir</th><th class="hide-sm">Catatan</th></tr></thead>
         <tbody>${trs}</tbody>
@@ -542,117 +552,89 @@ function viewSetting(){
     <h2>Pengaturan</h2>
     <div class="cards" style="margin-top:12px">
       <div class="card">
-        <div class="label">Biaya tetap bulanan (untuk hitung runway)</div>
+        <div class="label">Biaya tetap bulanan (untuk runway)</div>
         <input class="cash-input" value="${fmtFull(S.fixedMonthlyCost)}" onchange="S.fixedMonthlyCost=parseNum(this.value);render()">
-        <div class="hint">Default Rp 242jt = payroll 163 + PPH21 + BPJS + BAS + rumah tangga + reimburse + CC + loan</div>
+        <div class="hint">Default Rp 242jt</div>
       </div>
       <div class="card">
         <div class="label">Reset data</div>
-        <div class="hint" style="margin-bottom:8px">Timpa database bersama dengan angka seed awal (data tim sekarang hilang). Hati-hati.</div>
+        <div class="hint" style="margin-bottom:8px">Timpa database dengan angka CF Control Juni week 4 (data sekarang hilang).</div>
         <button class="btn danger" onclick="resetToSeed()">Reset ke seed</button>
       </div>
     </div>
   </div>`;
 }
 
-// ---------- actions ----------
-function toggleHold(id){ const b=S.bills.find(x=>x.id===id); if(b){ b.forceHold=!b.forceHold; render(); } }
-function markPaid(id){ const b=S.bills.find(x=>x.id===id); if(b){ b.status="paid"; b.paidAt=todayISO(); render(); } }
-function unpay(id){ const b=S.bills.find(x=>x.id===id); if(b){ b.status="pending"; delete b.paidAt; render(); } }
-async function delBill(id){
-  S.bills = S.bills.filter(x=>x.id!==id); render();
-  try{ const r = await sb.from('bills').delete().eq('id', id); if(r.error) throw r.error; }
-  catch(e){ console.error(e); setStatus('error'); }
+// ---------- actions: KAS MASUK ----------
+function markIn(id){ const x=S.cashin.find(v=>v.id===id); if(!x||x.status==='received') return; x.status='received'; x.receivedAt=todayISO(); S.cashOnHand+=x.amount; render(); }
+function unmarkIn(id){ const x=S.cashin.find(v=>v.id===id); if(!x||x.status!=='received') return; x.status='pending'; delete x.receivedAt; S.cashOnHand-=x.amount; render(); }
+async function delIn(id){
+  const x=S.cashin.find(v=>v.id===id); if(!x) return;
+  if(x.status==='received') S.cashOnHand-=x.amount;
+  S.cashin=S.cashin.filter(v=>v.id!==id); render();
+  try{ const r=await sb.from('cashin').delete().eq('id',id); if(r.error) throw r.error; }catch(e){ console.error(e); setStatus('error'); }
 }
-function addBill(){
-  const name = document.getElementById("f-name").value.trim();
-  const amount = parseNum(document.getElementById("f-amount").value);
-  if(!name || !amount) return;
-  S.bills.push({ id:"b"+Date.now(), name, amount,
-    category: document.getElementById("f-cat").value,
-    due: document.getElementById("f-due").value, status:"pending" });
+function addIn(){
+  const name=document.getElementById('ci-name').value.trim();
+  const amount=parseNum(document.getElementById('ci-amount').value);
+  if(!name||!amount) return;
+  S.cashin.push({ id:'in'+Date.now(), name, tag:document.getElementById('ci-tag').value.trim(),
+    amount, due:document.getElementById('ci-date').value, status:'pending' });
   render();
 }
+
+// ---------- actions: KAS KELUAR ----------
+function markOut(id){ const x=S.cashout.find(v=>v.id===id); if(!x||x.status==='paid') return; x.status='paid'; x.paidAt=todayISO(); S.cashOnHand-=x.amount; render(); }
+function unmarkOut(id){ const x=S.cashout.find(v=>v.id===id); if(!x||x.status!=='paid') return; x.status='pending'; delete x.paidAt; S.cashOnHand+=x.amount; render(); }
+async function delOut(id){
+  const x=S.cashout.find(v=>v.id===id); if(!x) return;
+  if(x.status==='paid') S.cashOnHand+=x.amount;
+  S.cashout=S.cashout.filter(v=>v.id!==id); render();
+  try{ const r=await sb.from('cashout').delete().eq('id',id); if(r.error) throw r.error; }catch(e){ console.error(e); setStatus('error'); }
+}
+function addOut(){
+  const name=document.getElementById('co-name').value.trim();
+  const amount=parseNum(document.getElementById('co-amount').value);
+  if(!name||!amount) return;
+  S.cashout.push({ id:'out'+Date.now(), name, tag:document.getElementById('co-tag').value.trim(),
+    amount, due:document.getElementById('co-date').value, status:'pending' });
+  render();
+}
+
+// ---------- actions: hutang / proyeksi ----------
 function updDebt(id,v){ const d=S.debts.find(x=>x.id===id); if(d){ d.paid=parseNum(v); render(); } }
 async function delDebt(id){
-  S.debts = S.debts.filter(x=>x.id!==id); render();
-  try{ const r = await sb.from('debts').delete().eq('id', id); if(r.error) throw r.error; }
-  catch(e){ console.error(e); setStatus('error'); }
+  S.debts=S.debts.filter(x=>x.id!==id); render();
+  try{ const r=await sb.from('debts').delete().eq('id',id); if(r.error) throw r.error; }catch(e){ console.error(e); setStatus('error'); }
 }
 function addDebt(){
-  const name = document.getElementById("d-name").value.trim();
-  const total = parseNum(document.getElementById("d-total").value);
-  if(!name || !total) return;
-  S.debts.push({ id:"d"+Date.now(), name, total, paid:0 });
-  render();
+  const name=document.getElementById('d-name').value.trim();
+  const total=parseNum(document.getElementById('d-total').value);
+  if(!name||!total) return;
+  S.debts.push({ id:'d'+Date.now(), name, total, paid:0 }); render();
 }
 function updProj(i,k,v){ S.projection[i][k]=parseNum(v); render(); }
 
-// ---------- KAS MASUK (inflow) ----------
-async function addInflow(){
-  const date   = document.getElementById("in-date").value;
-  const source = document.getElementById("in-source").value.trim();
-  const amount = parseNum(document.getElementById("in-amount").value);
-  if(!amount){ return; }
-  const entry = { id:"in"+Date.now(), date, source, amount };
-  S.inflows.push(entry);
-  S.cashOnHand += amount;   // kas otomatis bertambah
-  render();
-  setStatus('saving');
-  try{
-    let r = await sb.from('inflows').insert({ id:entry.id, date:entry.date||null, source:entry.source, amount:entry.amount });
-    if(r.error) throw r.error;
-    r = await sb.from('settings').upsert(settingsRow());
-    if(r.error) throw r.error;
-    setStatus('saved');
-  }catch(e){
-    console.error(e); setStatus('error');
-    alert("Gagal menyimpan kas masuk. Pastikan tabel 'inflows' sudah dibuat di Supabase (jalankan SQL yang diberikan).");
-  }
-}
-async function delInflow(id){
-  const e = S.inflows.find(x=>x.id===id);
-  if(!e) return;
-  S.cashOnHand -= e.amount;   // batalkan penambahan kas
-  S.inflows = S.inflows.filter(x=>x.id!==id);
-  render();
-  setStatus('saving');
-  try{
-    let r = await sb.from('inflows').delete().eq('id', id);
-    if(r.error) throw r.error;
-    r = await sb.from('settings').upsert(settingsRow());
-    if(r.error) throw r.error;
-    setStatus('saved');
-  }catch(e2){ console.error(e2); setStatus('error'); }
-}
-
+// ---------- misc ----------
 function doExport(){
   const blob = new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "ts-finance-backup-"+todayISO()+".json";
-  a.click();
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "ts-finance-backup-"+todayISO()+".json"; a.click();
 }
-
 async function resetToSeed(){
-  if(!confirm("Yakin reset SEMUA data tim ke angka awal? Data sekarang di database akan tertimpa.")) return;
-  S = structuredClone(SEED);
-  render();
+  if(!confirm("Yakin reset SEMUA data ke angka CF Control Juni week 4? Data sekarang di database tertimpa.")) return;
+  S = structuredClone(SEED); render();
 }
-
 async function reloadAll(){
   setStatus('saving');
   try{ await loadAll(); render(); setStatus('saved'); }
-  catch(e){ console.error(e); setStatus('error'); alert("Gagal memuat data. Cek koneksi / kredensial Supabase."); }
+  catch(e){ console.error(e); setStatus('error'); alert("Gagal memuat data. Cek koneksi / kredensial Supabase / tabel cashin & cashout."); }
 }
-
-// Refresh diam-diam (auto-sync antar user). Lewati kalau sedang mengetik atau menyimpan.
 async function silentReload(){
   if(!booted || saving) return;
   const el = document.activeElement;
   if(el && (el.tagName==='INPUT' || el.tagName==='SELECT' || el.tagName==='TEXTAREA')) return;
-  try{ const wasBooted=booted; booted=false; await loadAll(); render(); booted=wasBooted; }
-  catch(e){ console.error(e); }
+  try{ const wasBooted=booted; booted=false; await loadAll(); render(); booted=wasBooted; }catch(e){ console.error(e); }
 }
 
 // ---------- AUTH ----------
@@ -660,40 +642,26 @@ async function doLogin(ev){
   ev.preventDefault();
   const email = document.getElementById('login-email').value.trim();
   const pass  = document.getElementById('login-pass').value;
-  const btn = document.getElementById('login-btn');
-  const errEl = document.getElementById('login-err');
+  const btn = document.getElementById('login-btn'); const errEl = document.getElementById('login-err');
   errEl.textContent = ""; btn.disabled = true; btn.textContent = "Memproses…";
   const { error } = await sb.auth.signInWithPassword({ email, password: pass });
   btn.disabled = false; btn.textContent = "Masuk";
-  if(error){ errEl.textContent = "Login gagal: " + error.message; return; }
+  if(error){ errEl.textContent = "Login gagal: " + error.message; }
 }
-
-async function doLogout(){
-  await sb.auth.signOut();
-  location.reload();
-}
+async function doLogout(){ await sb.auth.signOut(); location.reload(); }
 
 async function startApp(session){
   document.getElementById('login').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   const who = document.getElementById('who');
   if(who && session?.user?.email) who.textContent = "Masuk sebagai " + session.user.email;
-  try{
-    booted = false;
-    await loadAll();
-    render();
-    booted = true;
-  }catch(e){
-    console.error(e);
-    alert("Gagal memuat data dari Supabase. Pastikan schema.sql sudah dijalankan dan kredensial benar.");
-  }
+  try{ booted = false; await loadAll(); render(); booted = true; }
+  catch(e){ console.error(e); alert("Gagal memuat data dari Supabase. Pastikan schema (cashin & cashout) sudah dijalankan dan kredensial benar."); }
 }
 
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='visible' && booted && !saving){ silentReload(); }
 });
-
-// Auto-sync: tarik perubahan rekan tiap 25 detik selama tab aktif.
 setInterval(()=>{ if(document.visibilityState==='visible'){ silentReload(); } }, 25000);
 
 (async function init(){
