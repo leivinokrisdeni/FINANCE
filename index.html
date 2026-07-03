@@ -12,7 +12,7 @@ body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSys
 .topbar{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:20px}
 .topbar h1{font-size:20px;font-weight:700}
 .topbar .sub{color:var(--muted);font-size:13px}
-.topbar .actions{display:flex;gap:8px}
+.topbar .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-bottom:20px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
 .card .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
@@ -63,10 +63,41 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .bar-label{font-size:11px;color:var(--muted)}
 .bar-val{font-size:10px;font-weight:700}
 .footer-note{color:var(--muted);font-size:12px;margin-top:24px}
+.save-status{font-size:12px;font-weight:600;color:var(--muted);min-width:80px}
+.save-status.saving{color:var(--amber)}
+.save-status.saved{color:var(--green)}
+.save-status.error{color:var(--red)}
+.who{font-size:12px;color:var(--muted)}
+/* login overlay */
+#login{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+#login .box{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:28px;width:100%;max-width:360px}
+#login h1{font-size:18px;font-weight:700;margin-bottom:4px}
+#login .sub{color:var(--muted);font-size:13px;margin-bottom:18px}
+#login .field{margin-bottom:12px}
+#login .btn.primary{width:100%;padding:10px;font-size:14px;justify-content:center}
+#login .err{color:var(--red);font-size:13px;font-weight:600;margin-top:10px;min-height:18px}
+#app{display:none}
 @media(max-width:640px){.hide-sm{display:none}}
 </style>
 </head>
 <body>
+
+<!-- ============ LOGIN SCREEN ============ -->
+<div id="login">
+  <div class="box">
+    <h1>TS Finance</h1>
+    <div class="sub">Masuk untuk melihat dashboard keuangan tim.</div>
+    <form onsubmit="doLogin(event)">
+      <div class="field"><label>Email</label><input id="login-email" type="email" autocomplete="username" required></div>
+      <div class="field"><label>Password</label><input id="login-pass" type="password" autocomplete="current-password" required></div>
+      <button class="btn primary" type="submit" id="login-btn">Masuk</button>
+      <div class="err" id="login-err"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app">
 <div class="wrap">
   <div class="topbar">
     <div>
@@ -74,22 +105,37 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
       <div class="sub">Teman Startup · dashboard mingguan untuk Indi</div>
     </div>
     <div class="actions">
+      <span class="save-status" id="save-status"></span>
+      <button class="btn" onclick="reloadAll()">↻ Muat ulang</button>
       <button class="btn" onclick="doExport()">Export backup</button>
-      <label class="btn">Import<input type="file" accept=".json" onchange="doImport(event)" style="display:none"></label>
+      <button class="btn" onclick="doLogout()">Keluar</button>
     </div>
   </div>
+  <div class="who" id="who" style="margin-bottom:12px"></div>
   <div class="cards" id="cards"></div>
   <div class="tabs" id="tabs"></div>
   <div id="content"></div>
   <div class="footer-note">
-    Data tersimpan otomatis di browser ini. Klik <b>Export backup</b> tiap Jumat (simpan file JSON), <b>Import</b> untuk memulihkan.
+    Data tersimpan bersama di database (Supabase). Perubahan otomatis tersimpan — muncul <b>Tersimpan ✓</b>.
+    Klik <b>↻ Muat ulang</b> untuk menarik perubahan terbaru dari rekan sebelum mengedit.
     Angka awal dari CF Control Juni 2026. Rutinitas Senin: update kas → bayar yang BAYAR DULU → laporkan angka "Butuh berapa lagi" ke Lei &amp; Kevin.
   </div>
 </div>
+</div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 "use strict";
-const LS_KEY = "ts-finance-html-v1";
+
+/* ==========================================================
+   1) KREDENSIAL SUPABASE — GANTI 2 BARIS INI
+   Ambil dari Supabase: Project Settings -> API
+   ========================================================== */
+const SUPABASE_URL      = "https://iuevvjoklznppxfbexwe.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_LBEPPo5nlX2LHKa_iLmOuA_-L400NEI";
+/* ========================================================== */
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const CATEGORIES = {
   gaji:{label:"Gaji / Payroll",prio:1}, pajak:{label:"Pajak (PPH21)",prio:2},
@@ -99,11 +145,9 @@ const CATEGORIES = {
   loan:{label:"Cicilan / Loan",prio:9}, cc:{label:"CC Founders",prio:10}, lainnya:{label:"Lainnya",prio:11}
 };
 
+// Seed hanya dipakai untuk tombol "Reset ke seed".
 const SEED = {
-  cashOnHand: 95175797,
-  fixedMonthlyCost: 242000000,
-  thrTarget: 160000000,
-  thrSaved: 0,
+  cashOnHand: 95175797, fixedMonthlyCost: 242000000, thrTarget: 160000000, thrSaved: 0,
   bills: [
     {id:"b1",name:"Payroll Juli",amount:171500068,category:"gaji",due:"2026-07-25",status:"pending"},
     {id:"b2",name:"Payroll Juni (holdover founders)",amount:24750000,category:"gaji",due:"2026-07-10",status:"pending"},
@@ -157,13 +201,11 @@ const SEED = {
   ]
 };
 
-let S;
-try { S = JSON.parse(localStorage.getItem(LS_KEY)) || structuredClone(SEED); }
-catch(e){ S = structuredClone(SEED); }
+let S = null;
 let TAB = "bayar";
+let booted = false;   // true setelah data pertama dimuat -> mulai auto-save
 
 // ---------- helpers ----------
-function save(){ localStorage.setItem(LS_KEY, JSON.stringify(S)); }
 function fmt(n){
   if(n===null||n===undefined||isNaN(n)) return "-";
   const neg = n<0, a = Math.abs(n); let s;
@@ -176,6 +218,86 @@ function fmtFull(n){ return (n<0?"-":"") + "Rp " + Math.abs(Math.round(n)).toLoc
 function parseNum(s){ const n = Number(String(s).replace(/[^\d-]/g,"")); return isNaN(n)?0:n; }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
+
+// ---------- SUPABASE: load + save ----------
+async function loadAll(){
+  const [st, bl, db, pr] = await Promise.all([
+    sb.from('settings').select('*').eq('id',1).maybeSingle(),
+    sb.from('bills').select('*'),
+    sb.from('debts').select('*'),
+    sb.from('projection').select('*').order('idx')
+  ]);
+  const err = st.error || bl.error || db.error || pr.error;
+  if(err){ throw err; }
+  const s = st.data || {};
+  S = {
+    cashOnHand:       Number(s.cash_on_hand ?? SEED.cashOnHand),
+    fixedMonthlyCost: Number(s.fixed_monthly_cost ?? SEED.fixedMonthlyCost),
+    thrTarget:        Number(s.thr_target ?? SEED.thrTarget),
+    thrSaved:         Number(s.thr_saved ?? SEED.thrSaved),
+    bills: (bl.data||[]).map(r=>({
+      id:r.id, name:r.name, amount:Number(r.amount), category:r.category,
+      due:r.due||"", status:r.status||"pending", paidAt:r.paid_at||undefined, forceHold:!!r.force_hold
+    })),
+    debts: (db.data||[]).map(r=>({ id:r.id, name:r.name, total:Number(r.total), paid:Number(r.paid||0) })),
+    projection: (pr.data||[]).map(r=>({ month:r.month, inflow:Number(r.inflow), outflow:Number(r.outflow), note:r.note||"" }))
+  };
+  // urutkan bills by id numerik biar rapi (b1..b32, lalu bXXXXtimestamp)
+  S.bills.sort((a,b)=>a.id.localeCompare(b.id,undefined,{numeric:true}));
+}
+
+function setStatus(state){
+  const el = document.getElementById('save-status');
+  if(!el) return;
+  el.className = 'save-status ' + state;
+  el.textContent = state==='saving' ? 'Menyimpan…' : state==='saved' ? 'Tersimpan ✓' : state==='error' ? 'Gagal simpan ✕' : '';
+  if(state==='saved') setTimeout(()=>{ if(el.classList.contains('saved')){ el.textContent=''; } }, 2500);
+}
+
+let saveTimer=null, saving=false, saveAgain=false;
+function scheduleSave(){
+  setStatus('saving');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(runSave, 500);
+}
+async function runSave(){
+  if(saving){ saveAgain=true; return; }
+  saving=true; saveAgain=false;
+  try{
+    await pushAll();
+    setStatus('saved');
+  }catch(e){
+    console.error(e); setStatus('error');
+  }finally{
+    saving=false;
+    if(saveAgain){ saveAgain=false; scheduleSave(); }
+  }
+}
+
+async function pushAll(){
+  // settings (satu baris, id=1)
+  let r = await sb.from('settings').upsert({
+    id:1, cash_on_hand:S.cashOnHand, fixed_monthly_cost:S.fixedMonthlyCost,
+    thr_target:S.thrTarget, thr_saved:S.thrSaved
+  });
+  if(r.error) throw r.error;
+
+  // bills: upsert saja (TIDAK menghapus baris rekan). Hapus baris dilakukan
+  // eksplisit lewat delBill() saat seseorang klik ✕.
+  const billRows = S.bills.map(b=>({
+    id:b.id, name:b.name, amount:b.amount, category:b.category,
+    due:b.due||null, status:b.status||'pending', paid_at:b.paidAt||null, force_hold:!!b.forceHold
+  }));
+  if(billRows.length){ r = await sb.from('bills').upsert(billRows); if(r.error) throw r.error; }
+
+  // debts: upsert saja
+  const debtRows = S.debts.map(d=>({ id:d.id, name:d.name, total:d.total, paid:d.paid }));
+  if(debtRows.length){ r = await sb.from('debts').upsert(debtRows); if(r.error) throw r.error; }
+
+  // projection: idx = posisi array
+  const projRows = S.projection.map((p,i)=>({ idx:i, month:p.month, inflow:p.inflow, outflow:p.outflow, note:p.note||"" }));
+  if(projRows.length){ r = await sb.from('projection').upsert(projRows); if(r.error) throw r.error; }
+}
 
 // ---------- derived ----------
 function sortedPending(){
@@ -200,7 +322,7 @@ function projRows(){
 
 // ---------- render ----------
 function render(){
-  save();
+  if(booted) scheduleSave();
   renderCards();
   renderTabs();
   const c = document.getElementById("content");
@@ -396,8 +518,8 @@ function viewSetting(){
       </div>
       <div class="card">
         <div class="label">Reset data</div>
-        <div class="hint" style="margin-bottom:8px">Kembalikan semua angka ke seed awal (data sekarang hilang).</div>
-        <button class="btn danger" onclick="if(confirm('Yakin reset semua data ke awal?')){localStorage.removeItem(LS_KEY);location.reload()}">Reset ke seed</button>
+        <div class="hint" style="margin-bottom:8px">Timpa database bersama dengan angka seed awal (data tim sekarang hilang). Hati-hati.</div>
+        <button class="btn danger" onclick="resetToSeed()">Reset ke seed</button>
       </div>
     </div>
   </div>`;
@@ -407,7 +529,11 @@ function viewSetting(){
 function toggleHold(id){ const b=S.bills.find(x=>x.id===id); if(b){ b.forceHold=!b.forceHold; render(); } }
 function markPaid(id){ const b=S.bills.find(x=>x.id===id); if(b){ b.status="paid"; b.paidAt=todayISO(); render(); } }
 function unpay(id){ const b=S.bills.find(x=>x.id===id); if(b){ b.status="pending"; delete b.paidAt; render(); } }
-function delBill(id){ S.bills = S.bills.filter(x=>x.id!==id); render(); }
+async function delBill(id){
+  S.bills = S.bills.filter(x=>x.id!==id); render();
+  try{ const r = await sb.from('bills').delete().eq('id', id); if(r.error) throw r.error; }
+  catch(e){ console.error(e); setStatus('error'); }
+}
 function addBill(){
   const name = document.getElementById("f-name").value.trim();
   const amount = parseNum(document.getElementById("f-amount").value);
@@ -418,7 +544,11 @@ function addBill(){
   render();
 }
 function updDebt(id,v){ const d=S.debts.find(x=>x.id===id); if(d){ d.paid=parseNum(v); render(); } }
-function delDebt(id){ S.debts = S.debts.filter(x=>x.id!==id); render(); }
+async function delDebt(id){
+  S.debts = S.debts.filter(x=>x.id!==id); render();
+  try{ const r = await sb.from('debts').delete().eq('id', id); if(r.error) throw r.error; }
+  catch(e){ console.error(e); setStatus('error'); }
+}
 function addDebt(){
   const name = document.getElementById("d-name").value.trim();
   const total = parseNum(document.getElementById("d-total").value);
@@ -427,6 +557,7 @@ function addDebt(){
   render();
 }
 function updProj(i,k,v){ S.projection[i][k]=parseNum(v); render(); }
+
 function doExport(){
   const blob = new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
   const a = document.createElement("a");
@@ -434,16 +565,81 @@ function doExport(){
   a.download = "ts-finance-backup-"+todayISO()+".json";
   a.click();
 }
-function doImport(ev){
-  const file = ev.target.files && ev.target.files[0];
-  if(!file) return;
-  const r = new FileReader();
-  r.onload = ()=>{ try{ S = {...S, ...JSON.parse(r.result)}; render(); }catch(e){ alert("File tidak valid"); } };
-  r.readAsText(file);
-  ev.target.value = "";
+
+async function resetToSeed(){
+  if(!confirm("Yakin reset SEMUA data tim ke angka awal? Data sekarang di database akan tertimpa.")) return;
+  S = structuredClone(SEED);
+  render();               // memicu auto-save ke database
 }
 
-render();
+async function reloadAll(){
+  setStatus('saving');
+  try{ await loadAll(); render(); setStatus('saved'); }
+  catch(e){ console.error(e); setStatus('error'); alert("Gagal memuat data. Cek koneksi / kredensial Supabase."); }
+}
+
+// Refresh diam-diam (untuk auto-sync antar user). Lewati kalau sedang mengetik
+// atau sedang menyimpan, biar tidak menimpa input yang belum tersimpan.
+async function silentReload(){
+  if(!booted || saving) return;
+  const el = document.activeElement;
+  if(el && (el.tagName==='INPUT' || el.tagName==='SELECT' || el.tagName==='TEXTAREA')) return;
+  try{ const wasBooted=booted; booted=false; await loadAll(); render(); booted=wasBooted; }
+  catch(e){ console.error(e); }
+}
+
+// ---------- AUTH ----------
+async function doLogin(ev){
+  ev.preventDefault();
+  const email = document.getElementById('login-email').value.trim();
+  const pass  = document.getElementById('login-pass').value;
+  const btn = document.getElementById('login-btn');
+  const errEl = document.getElementById('login-err');
+  errEl.textContent = ""; btn.disabled = true; btn.textContent = "Memproses…";
+  const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+  btn.disabled = false; btn.textContent = "Masuk";
+  if(error){ errEl.textContent = "Login gagal: " + error.message; return; }
+  // onAuthStateChange akan menjalankan startApp()
+}
+
+async function doLogout(){
+  await sb.auth.signOut();
+  location.reload();
+}
+
+async function startApp(session){
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  const who = document.getElementById('who');
+  if(who && session?.user?.email) who.textContent = "Masuk sebagai " + session.user.email;
+  try{
+    booted = false;
+    await loadAll();
+    render();
+    booted = true;           // mulai auto-save setelah data awal siap
+  }catch(e){
+    console.error(e);
+    alert("Gagal memuat data dari Supabase. Pastikan schema.sql sudah dijalankan dan kredensial benar.");
+  }
+}
+
+// Muat versi terbaru saat tab kembali fokus (tanpa menimpa kerjaan yg belum tersimpan)
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='visible' && booted && !saving){ silentReload(); }
+});
+
+// Auto-sync: tarik perubahan rekan tiap 25 detik selama tab aktif.
+setInterval(()=>{ if(document.visibilityState==='visible'){ silentReload(); } }, 25000);
+
+// Cek sesi saat halaman dibuka
+(async function init(){
+  const { data:{ session } } = await sb.auth.getSession();
+  if(session){ startApp(session); }
+  // kalau belum login, layar #login sudah tampil default
+  sb.auth.onAuthStateChange((_event, sess)=>{
+    if(sess && document.getElementById('app').style.display !== 'block'){ startApp(sess); }
+  });
+})();
 </script>
 </body>
 </html>
