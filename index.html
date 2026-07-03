@@ -68,7 +68,6 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .save-status.saved{color:var(--green)}
 .save-status.error{color:var(--red)}
 .who{font-size:12px;color:var(--muted)}
-/* login overlay */
 #login{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
 #login .box{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:28px;width:100%;max-width:360px}
 #login h1{font-size:18px;font-weight:700;margin-bottom:4px}
@@ -117,7 +116,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <div id="content"></div>
   <div class="footer-note">
     Data tersimpan bersama di database (Supabase). Perubahan otomatis tersimpan — muncul <b>Tersimpan ✓</b>.
-    Klik <b>↻ Muat ulang</b> untuk menarik perubahan terbaru dari rekan sebelum mengedit.
+    Kas di tangan bertambah otomatis dari tab <b>Kas Masuk</b>. Klik <b>↻ Muat ulang</b> untuk menarik perubahan terbaru dari rekan.
     Angka awal dari CF Control Juni 2026. Rutinitas Senin: update kas → bayar yang BAYAR DULU → laporkan angka "Butuh berapa lagi" ke Lei &amp; Kevin.
   </div>
 </div>
@@ -128,8 +127,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 "use strict";
 
 /* ==========================================================
-   1) KREDENSIAL SUPABASE — GANTI 2 BARIS INI
-   Ambil dari Supabase: Project Settings -> API
+   KREDENSIAL SUPABASE (Project Settings -> API)
    ========================================================== */
 const SUPABASE_URL      = "https://iuevvjoklznppxfbexwe.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_LBEPPo5nlX2LHKa_iLmOuA_-L400NEI";
@@ -148,6 +146,7 @@ const CATEGORIES = {
 // Seed hanya dipakai untuk tombol "Reset ke seed".
 const SEED = {
   cashOnHand: 95175797, fixedMonthlyCost: 242000000, thrTarget: 160000000, thrSaved: 0,
+  inflows: [],
   bills: [
     {id:"b1",name:"Payroll Juli",amount:171500068,category:"gaji",due:"2026-07-25",status:"pending"},
     {id:"b2",name:"Payroll Juni (holdover founders)",amount:24750000,category:"gaji",due:"2026-07-10",status:"pending"},
@@ -218,6 +217,7 @@ function fmtFull(n){ return (n<0?"-":"") + "Rp " + Math.abs(Math.round(n)).toLoc
 function parseNum(s){ const n = Number(String(s).replace(/[^\d-]/g,"")); return isNaN(n)?0:n; }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
+function settingsRow(){ return { id:1, cash_on_hand:S.cashOnHand, fixed_monthly_cost:S.fixedMonthlyCost, thr_target:S.thrTarget, thr_saved:S.thrSaved }; }
 
 // ---------- SUPABASE: load + save ----------
 async function loadAll(){
@@ -235,6 +235,7 @@ async function loadAll(){
     fixedMonthlyCost: Number(s.fixed_monthly_cost ?? SEED.fixedMonthlyCost),
     thrTarget:        Number(s.thr_target ?? SEED.thrTarget),
     thrSaved:         Number(s.thr_saved ?? SEED.thrSaved),
+    inflows: [],
     bills: (bl.data||[]).map(r=>({
       id:r.id, name:r.name, amount:Number(r.amount), category:r.category,
       due:r.due||"", status:r.status||"pending", paidAt:r.paid_at||undefined, forceHold:!!r.force_hold
@@ -242,8 +243,12 @@ async function loadAll(){
     debts: (db.data||[]).map(r=>({ id:r.id, name:r.name, total:Number(r.total), paid:Number(r.paid||0) })),
     projection: (pr.data||[]).map(r=>({ month:r.month, inflow:Number(r.inflow), outflow:Number(r.outflow), note:r.note||"" }))
   };
-  // urutkan bills by id numerik biar rapi (b1..b32, lalu bXXXXtimestamp)
   S.bills.sort((a,b)=>a.id.localeCompare(b.id,undefined,{numeric:true}));
+  // Kas masuk (opsional — kalau tabelnya belum dibuat, app tetap jalan)
+  try{
+    const inf = await sb.from('inflows').select('*').order('date');
+    if(!inf.error) S.inflows = (inf.data||[]).map(r=>({ id:r.id, date:r.date||"", source:r.source||"", amount:Number(r.amount) }));
+  }catch(e){ /* tabel inflows mungkin belum ada */ }
 }
 
 function setStatus(state){
@@ -275,28 +280,24 @@ async function runSave(){
 }
 
 async function pushAll(){
-  // settings (satu baris, id=1)
-  let r = await sb.from('settings').upsert({
-    id:1, cash_on_hand:S.cashOnHand, fixed_monthly_cost:S.fixedMonthlyCost,
-    thr_target:S.thrTarget, thr_saved:S.thrSaved
-  });
+  let r = await sb.from('settings').upsert(settingsRow());
   if(r.error) throw r.error;
 
-  // bills: upsert saja (TIDAK menghapus baris rekan). Hapus baris dilakukan
-  // eksplisit lewat delBill() saat seseorang klik ✕.
+  // upsert saja (TIDAK menghapus baris rekan). Hapus dilakukan eksplisit saat klik ✕.
   const billRows = S.bills.map(b=>({
     id:b.id, name:b.name, amount:b.amount, category:b.category,
     due:b.due||null, status:b.status||'pending', paid_at:b.paidAt||null, force_hold:!!b.forceHold
   }));
   if(billRows.length){ r = await sb.from('bills').upsert(billRows); if(r.error) throw r.error; }
 
-  // debts: upsert saja
   const debtRows = S.debts.map(d=>({ id:d.id, name:d.name, total:d.total, paid:d.paid }));
   if(debtRows.length){ r = await sb.from('debts').upsert(debtRows); if(r.error) throw r.error; }
 
-  // projection: idx = posisi array
   const projRows = S.projection.map((p,i)=>({ idx:i, month:p.month, inflow:p.inflow, outflow:p.outflow, note:p.note||"" }));
   if(projRows.length){ r = await sb.from('projection').upsert(projRows); if(r.error) throw r.error; }
+
+  const infRows = S.inflows.map(x=>({ id:x.id, date:x.date||null, source:x.source, amount:x.amount }));
+  if(infRows.length){ r = await sb.from('inflows').upsert(infRows); if(r.error) throw r.error; }
 }
 
 // ---------- derived ----------
@@ -327,6 +328,7 @@ function render(){
   renderTabs();
   const c = document.getElementById("content");
   if(TAB==="bayar") c.innerHTML = viewBayar();
+  else if(TAB==="kasmasuk") c.innerHTML = viewKasMasuk();
   else if(TAB==="hutang") c.innerHTML = viewHutang();
   else if(TAB==="thr") c.innerHTML = viewThr();
   else if(TAB==="proyeksi") c.innerHTML = viewProyeksi();
@@ -345,7 +347,7 @@ function renderCards(){
     <div class="card">
       <div class="label">Kas di tangan (update tiap Senin)</div>
       <input class="cash-input" value="${fmtFull(S.cashOnHand)}" onchange="S.cashOnHand=parseNum(this.value);render()">
-      <div class="hint">Saldo rekening gabungan hari ini</div>
+      <div class="hint">Bertambah otomatis dari tab Kas Masuk. Bisa diedit manual.</div>
     </div>
     <div class="card ${gap>0?"bad":"ok"}">
       <div class="label">Butuh berapa lagi bulan ini</div>
@@ -365,7 +367,7 @@ function renderCards(){
 }
 
 function renderTabs(){
-  const tabs = [["bayar","Pembayaran"],["hutang","Hutang"],["thr","Tabungan THR"],["proyeksi","Proyeksi s/d Des 2026"],["setting","Pengaturan"]];
+  const tabs = [["bayar","Pembayaran"],["kasmasuk","Kas Masuk"],["hutang","Hutang"],["thr","Tabungan THR"],["proyeksi","Proyeksi s/d Des 2026"],["setting","Pengaturan"]];
   document.getElementById("tabs").innerHTML = tabs.map(([k,l])=>
     `<button class="${TAB===k?"active":""}" onclick="TAB='${k}';render()">${l}</button>`).join("");
 }
@@ -424,6 +426,34 @@ function viewBayar(){
       </div>
     </div>
     ${paid.length ? `<div class="panel"><h2>Sudah dibayar</h2><table><tbody>${paidRows}</tbody></table></div>` : ""}`;
+}
+
+function viewKasMasuk(){
+  const list = [...S.inflows].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
+  const total = S.inflows.reduce((s,x)=>s+x.amount,0);
+  const rows = list.map(x=>`<tr>
+    <td>${x.date||"-"}</td>
+    <td>${esc(x.source||"")}</td>
+    <td class="num pos">${fmtFull(x.amount)}</td>
+    <td><button class="btn small danger" onclick="delInflow('${x.id}')">✕</button></td>
+  </tr>`).join("");
+  return `<div class="alert ok">Kas di tangan sekarang: <b>${fmtFull(S.cashOnHand)}</b></div>
+    <div class="panel">
+      <h2>Kas masuk dari klien</h2>
+      <div class="desc">Tiap kali ada uang masuk dari klien, catat di sini — <b>Kas di tangan otomatis bertambah</b>.
+      Klik ✕ untuk membatalkan satu entri (kas otomatis dikurangi kembali). Jadi tidak perlu edit kas manual tiap minggu.</div>
+      <div class="desc">Total kas masuk tercatat: <b>${fmtFull(total)}</b></div>
+      <div style="overflow-x:auto"><table>
+        <thead><tr><th>Tanggal</th><th>Dari / Klien</th><th class="num">Jumlah masuk</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" style="color:var(--muted)">Belum ada kas masuk tercatat.</td></tr>'}</tbody>
+      </table></div>
+      <div class="form-grid">
+        <div class="field"><label>Tanggal</label><input id="in-date" type="date" value="${todayISO()}"></div>
+        <div class="field"><label>Dari / Klien</label><input id="in-source" placeholder="cth: DP Event Klien X"></div>
+        <div class="field"><label>Jumlah masuk (Rp)</label><input id="in-amount" placeholder="50000000"></div>
+        <button class="btn primary" onclick="addInflow()">+ Tambah kas masuk</button>
+      </div>
+    </div>`;
 }
 
 function viewHutang(){
@@ -558,6 +588,44 @@ function addDebt(){
 }
 function updProj(i,k,v){ S.projection[i][k]=parseNum(v); render(); }
 
+// ---------- KAS MASUK (inflow) ----------
+async function addInflow(){
+  const date   = document.getElementById("in-date").value;
+  const source = document.getElementById("in-source").value.trim();
+  const amount = parseNum(document.getElementById("in-amount").value);
+  if(!amount){ return; }
+  const entry = { id:"in"+Date.now(), date, source, amount };
+  S.inflows.push(entry);
+  S.cashOnHand += amount;   // kas otomatis bertambah
+  render();
+  setStatus('saving');
+  try{
+    let r = await sb.from('inflows').insert({ id:entry.id, date:entry.date||null, source:entry.source, amount:entry.amount });
+    if(r.error) throw r.error;
+    r = await sb.from('settings').upsert(settingsRow());
+    if(r.error) throw r.error;
+    setStatus('saved');
+  }catch(e){
+    console.error(e); setStatus('error');
+    alert("Gagal menyimpan kas masuk. Pastikan tabel 'inflows' sudah dibuat di Supabase (jalankan SQL yang diberikan).");
+  }
+}
+async function delInflow(id){
+  const e = S.inflows.find(x=>x.id===id);
+  if(!e) return;
+  S.cashOnHand -= e.amount;   // batalkan penambahan kas
+  S.inflows = S.inflows.filter(x=>x.id!==id);
+  render();
+  setStatus('saving');
+  try{
+    let r = await sb.from('inflows').delete().eq('id', id);
+    if(r.error) throw r.error;
+    r = await sb.from('settings').upsert(settingsRow());
+    if(r.error) throw r.error;
+    setStatus('saved');
+  }catch(e2){ console.error(e2); setStatus('error'); }
+}
+
 function doExport(){
   const blob = new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
   const a = document.createElement("a");
@@ -569,7 +637,7 @@ function doExport(){
 async function resetToSeed(){
   if(!confirm("Yakin reset SEMUA data tim ke angka awal? Data sekarang di database akan tertimpa.")) return;
   S = structuredClone(SEED);
-  render();               // memicu auto-save ke database
+  render();
 }
 
 async function reloadAll(){
@@ -578,8 +646,7 @@ async function reloadAll(){
   catch(e){ console.error(e); setStatus('error'); alert("Gagal memuat data. Cek koneksi / kredensial Supabase."); }
 }
 
-// Refresh diam-diam (untuk auto-sync antar user). Lewati kalau sedang mengetik
-// atau sedang menyimpan, biar tidak menimpa input yang belum tersimpan.
+// Refresh diam-diam (auto-sync antar user). Lewati kalau sedang mengetik atau menyimpan.
 async function silentReload(){
   if(!booted || saving) return;
   const el = document.activeElement;
@@ -599,7 +666,6 @@ async function doLogin(ev){
   const { error } = await sb.auth.signInWithPassword({ email, password: pass });
   btn.disabled = false; btn.textContent = "Masuk";
   if(error){ errEl.textContent = "Login gagal: " + error.message; return; }
-  // onAuthStateChange akan menjalankan startApp()
 }
 
 async function doLogout(){
@@ -616,14 +682,13 @@ async function startApp(session){
     booted = false;
     await loadAll();
     render();
-    booted = true;           // mulai auto-save setelah data awal siap
+    booted = true;
   }catch(e){
     console.error(e);
     alert("Gagal memuat data dari Supabase. Pastikan schema.sql sudah dijalankan dan kredensial benar.");
   }
 }
 
-// Muat versi terbaru saat tab kembali fokus (tanpa menimpa kerjaan yg belum tersimpan)
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='visible' && booted && !saving){ silentReload(); }
 });
@@ -631,11 +696,9 @@ document.addEventListener('visibilitychange', ()=>{
 // Auto-sync: tarik perubahan rekan tiap 25 detik selama tab aktif.
 setInterval(()=>{ if(document.visibilityState==='visible'){ silentReload(); } }, 25000);
 
-// Cek sesi saat halaman dibuka
 (async function init(){
   const { data:{ session } } = await sb.auth.getSession();
   if(session){ startApp(session); }
-  // kalau belum login, layar #login sudah tampil default
   sb.auth.onAuthStateChange((_event, sess)=>{
     if(sess && document.getElementById('app').style.display !== 'block'){ startApp(sess); }
   });
